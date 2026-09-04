@@ -118,6 +118,73 @@ class DefaultModelBuilderTest {
         assertTrue(withoutSuppression.matches(newProfileActivationContext(List.of(), List.of())));
     }
 
+    /**
+     * MNG-8710: a file-activated profile defined in a parent POM must contribute to the child's
+     * effective model when the activation path interpolates a property declared on that parent.
+     *
+     * <p>Maven 4 activates parent profiles against the child's activation context so that
+     * {@code <exists>} is resolved relative to the child basedir. That context originally
+     * carried only the child's own properties, so {@code ${message.file}} did not interpolate
+     * and the profile contribution was dropped, even though later reporting (help:all-profiles)
+     * could still consider the profile active once inherited properties were visible.
+     */
+    @Test
+    public void testInheritedFileProfileActivatedByParentProperty() {
+        Path parentPom = getPomDir("mng-8710/pom.xml");
+        Path childPom = getPomDir("mng-8710/child/pom.xml");
+
+        ModelBuilder.ModelBuilderSession mbs = builder.newSession();
+
+        ModelBuilderResult parentResult = mbs.build(ModelBuilderRequest.builder()
+                .session(session)
+                .requestType(ModelBuilderRequest.RequestType.BUILD_PROJECT)
+                .source(Sources.buildSource(parentPom))
+                .build());
+        assertEquals(
+                "true",
+                parentResult.getEffectiveModel().getProperties().get("mng8710.active"),
+                "parent effective model must contain the file-activated profile contribution");
+        assertProfileActive(parentResult, "org.apache.maven.test:mng-8710-parent:1.0-SNAPSHOT", "test");
+
+        ModelBuilderResult childResult = mbs.build(ModelBuilderRequest.builder()
+                .session(session)
+                .requestType(ModelBuilderRequest.RequestType.BUILD_PROJECT)
+                .source(Sources.buildSource(childPom))
+                .build());
+        Model childModel = childResult.getEffectiveModel();
+        assertEquals(
+                "true",
+                childModel.getProperties().get("mng8710.active"),
+                "child effective model must contain the inherited profile contribution");
+        assertProfileActive(childResult, "org.apache.maven.test:mng-8710-parent:1.0-SNAPSHOT", "test");
+    }
+
+    /**
+     * File activation of an inherited profile is still relative to the child basedir. A sibling
+     * without {@code test.txt} must not receive the profile contribution even though the parent
+     * directory contains the activation file.
+     */
+    @Test
+    public void testInheritedFileProfileDoesNotActivateWhenChildFileIsMissing() {
+        Path childPom = getPomDir("mng-8710/child-no-file/pom.xml");
+
+        ModelBuilderResult childResult = builder.newSession()
+                .build(ModelBuilderRequest.builder()
+                        .session(session)
+                        .requestType(ModelBuilderRequest.RequestType.BUILD_PROJECT)
+                        .source(Sources.buildSource(childPom))
+                        .build());
+
+        assertNull(
+                childResult.getEffectiveModel().getProperties().get("mng8710.active"),
+                "child without the activation file must not inherit the profile contribution");
+        List<Profile> parentProfiles =
+                childResult.getActivePomProfiles("org.apache.maven.test:mng-8710-parent:1.0-SNAPSHOT");
+        assertTrue(
+                parentProfiles.stream().noneMatch(p -> "test".equals(p.getId())),
+                "profile must not be tracked as active when the child file is missing; active=" + parentProfiles);
+    }
+
     @Test
     public void testPropertiesAndProfiles() {
         ModelBuilderRequest request = ModelBuilderRequest.builder()
@@ -1722,5 +1789,17 @@ class DefaultModelBuilderTest {
 
     private Path getPom(String name) {
         return Paths.get("src/test/resources/poms/factory/" + name + ".xml").toAbsolutePath();
+    }
+
+    private Path getPomDir(String relativePath) {
+        return Paths.get("src/test/resources/poms/factory/" + relativePath).toAbsolutePath();
+    }
+
+    private static void assertProfileActive(ModelBuilderResult result, String modelId, String profileId) {
+        List<Profile> profiles = result.getActivePomProfiles(modelId);
+        assertTrue(
+                profiles.stream().anyMatch(p -> profileId.equals(p.getId())),
+                "profile '" + profileId + "' must be active for " + modelId + "; active="
+                        + profiles.stream().map(Profile::getId).toList());
     }
 }

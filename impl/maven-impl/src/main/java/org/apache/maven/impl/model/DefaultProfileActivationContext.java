@@ -355,6 +355,10 @@ public class DefaultProfileActivationContext implements ProfileActivationContext
         return this;
     }
 
+    public Model getModel() {
+        return model;
+    }
+
     @Override
     public String interpolatePath(String path) throws InterpolatorException {
         if (path == null) {

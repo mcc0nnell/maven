@@ -2268,10 +2268,23 @@ public class DefaultModelBuilder implements ModelBuilder {
             // This ensures proper precedence: child elements override parent elements,
             // including elements that came from parent profiles.
             //
-            // Use the child's activation context (passed as parameter) to determine
-            // which parent profiles should be active, ensuring consistency.
-            List<Profile> parentActivePomProfiles =
-                    getActiveProfiles(parent.getProfiles(), childProfileActivationContext);
+            // File existence is resolved against the child's basedir (Maven 3 behavior),
+            // but interpolations in parent profile activation (e.g.
+            // <exists>${message.file}</exists>) must see the parent model's properties.
+            // The child's activation context otherwise only carries the child's own
+            // properties, which do not yet include inherited ones (MNG-8710).
+            Model originalActivationModel = childProfileActivationContext.getModel();
+            if (originalActivationModel != null) {
+                childProfileActivationContext.setModel(originalActivationModel.withProperties(parent.getProperties()));
+            }
+            List<Profile> parentActivePomProfiles;
+            try {
+                parentActivePomProfiles = getActiveProfiles(parent.getProfiles(), childProfileActivationContext);
+            } finally {
+                if (originalActivationModel != null) {
+                    childProfileActivationContext.setModel(originalActivationModel);
+                }
+            }
 
             // Inject profiles into parent model
             Model injectedParentModel = profileInjector
