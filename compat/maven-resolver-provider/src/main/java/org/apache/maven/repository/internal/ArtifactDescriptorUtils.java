@@ -65,7 +65,7 @@ public class ArtifactDescriptorUtils {
 
     public static RepositoryPolicy toRepositoryPolicy(org.apache.maven.model.RepositoryPolicy policy) {
         boolean enabled = true;
-        String checksums = toRepositoryChecksumPolicy(RepositoryPolicy.CHECKSUM_POLICY_WARN); // the default
+        String checksums = toRepositoryChecksumPolicy(RepositoryPolicy.CHECKSUM_POLICY_FAIL);
         String updates = RepositoryPolicy.UPDATE_POLICY_DAILY;
 
         if (policy != null) {
